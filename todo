@@ -1,5 +1,3 @@
-RNALfold handler
-filter hairpins
-MAF parser
+overlapping hairpins
 RNAeval
 scoring method

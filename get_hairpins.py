@@ -1,47 +1,38 @@
 import parsers as ps
-import functions as fn
 import handlers as hn
+import funk as fk
 
 gtf_parser = ps.Gtf('knowns_toy.gtf')
 dro_genomes = ['dro' + x for x in ['Bia2', 'Ele2', 'Ere2', 'Eug2', 'Moj3', 'Per1', 'Rho2',
                                    'Sec1', 'Sim1', 'Suz1', 'Tak2', 'Vir3', 'Yak3']]
 parser = ps.Maf('/Users/martin/Documents/drosophila/toy.maf', main_genome='dm6', genomes=dro_genomes)
+lfolder = hn.RnaFold().Lfold(['-T', '25', '--noLP'])
 
-
+print('getting trans_exons')
 trans_exons = gtf_parser.get_trans_exon(annot='.')
-trans_exons_manager = fn.TransExons(trans_exons)
-trans_start_stops = gtf_parser.get_start_stop_codons(annot='.')
-lfolder = hn.RnaFold().Lfold()
 
-trans_rel_stst = {}
-for trans in trans_exons.keys():
-    if trans in trans_start_stops:
-        start_stop = trans_start_stops[trans]
-        if len(start_stop) != 2:
-            continue
-        trans_rel_stst[trans] = trans_exons_manager.rel_pos_trans(trans, [start_stop[0][0], start_stop[1][0]])
+print('retrieving relative start stops')
+trans_rel_stst = fk.get_start_stops(trans_exons, gtf_parser)
 
+print('reading maf')
 parser.get_alignments()
 
-trans_seqs = {}
-
-for trans in trans_exons.keys():
-    seqs = {}
-    for exon in trans_exons[trans]:
-        region = parser.get_region(exon[1], exon[2], exon[3])
-        for key, obj in region.items():
-            seqs = fn.add2dict(seqs, key, obj)
-    for key, obj in seqs.items():
-        seqs[key] = ''.join(obj)
-    trans_seqs[trans] = seqs
-
+print('extracting sequences')
+trans_seqs = fk.get_seqs(trans_exons, parser)
 parser = None
 
-for trans in trans_seqs.keys():
-    dm6_seq = trans_seqs[trans]['dm6']
-    hairpins = lfolder.compute(dm6_seq.replace('-', ''), temp=25, noLP=True)
-    for hairpin in hairpins:
-        pos = hairpin['pos'] - 1
-        seq = dm6_seq.replace('-','')[pos : pos + len(hairpin['fold'])]
-        folder = fn.Fold(hairpin['fold'], seq)
-        print(hairpin['fold'] + '\n' + seq)
+print('folding')
+with open('hairpins', 'w') as fout:
+    for trans in trans_seqs.keys():
+        dm6_seq_gapped = trans_seqs[trans]['dm6']
+        dm6_seq = dm6_seq_gapped.replace('-', '')
+        hairpins = lfolder.compute(dm6_seq)
+        for hairpin in hairpins:
+            hairp_data = fk.analyze_hairpin(hairpin, dm6_seq_gapped, trans_seqs[trans])
+            loc = fk.determine_location(hairpin, trans_rel_stst[trans])
+
+            # check location!!!
+
+            if hairp_data:
+                fout.write('\t'.join([str(x) for x in [trans, hairpin['fold'], loc, len(hairpin['fold']), hairpin['energy']] + hairp_data]))
+                fout.write('\n')

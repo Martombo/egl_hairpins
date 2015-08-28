@@ -2,13 +2,23 @@ import functions as fn
 import handlers as hn
 gp = fn.GappedSeq()
 
+def consv_score(seqA, seqB):
+    assert len(seqA) == len(seqB)
+    score, leng = 0, 0
+    for k in range(len(seqA)):
+        if seqA[k] != '-':
+            if seqA[k] == seqB[k]:
+                score += 1
+            leng += 1
+    return float(score) / leng
+
 def determine_location(hairpin, rel_stst_trans):
     mid_pos = hairpin['pos'] + (len(hairpin['fold']) / 2)
     if mid_pos < rel_stst_trans[0]:
-        return '5\'UTR'
+        return '5UTR'
     elif hairpin['pos'] < rel_stst_trans[1]:
         return 'CDS'
-    return '3\'UTR'
+    return '3UTR'
 
 def get_start_stops(trans_exons, gtf_parser):
     trans_exons_manager = fn.TransExons(trans_exons)
@@ -35,20 +45,17 @@ def get_seqs(trans_exons, parser):
         trans_seqs[trans] = seqs
     return trans_seqs
 
-def is_hairpin_valid(hairpin_fold, seq):
+def check_hairpin(hairpin_fold, seq):
     """here are the necessary condition for a hairpin:
-    20 <= len <= 80
     is_simple
+    20 <= len <= 80
     get_Aprimes() > 1
     """
     hairp_fold = fn.Fold(hairpin_fold, seq)
-    if not hairp_fold.is_simple():
-        return False
-    if hairp_fold.len < 20 or hairp_fold.len > 80:
-        return False
+    simple = hairp_fold.is_simple()
+    leng = 19 < hairp_fold.len < 81
     aPrimes = hairp_fold.get_Aprimes()
-    if len(aPrimes) > 1:
-        return aPrimes
+    return simple, leng, aPrimes
 
 def perc_matches(fold):
     match_n = fold.count('(') + fold.count(')')
@@ -58,19 +65,23 @@ def get_ortho_data(dro_seq, hairp_fold, dm6_hairp_gap):
     con_fold = hn.RnaFold().CostraintFold()
     seq, constr = gp.get_ortho_constr(dm6_hairp_gap, hairp_fold, dro_seq)
     if not seq:
-        return
+        return '\t'.join([str(x) for x in [0, 0, 0, 0, False]])
     (fold, fold_score) = con_fold.compute(seq + '\n' + constr)
-    aPrimes = is_hairpin_valid(fold, seq)
+    check = check_hairpin(fold, seq)
+    return '\t'.join([str(x) for x in [len(fold), fold_score, perc_matches(fold), len(check[2]), check[0]]])
 
 def analyze_hairpin(hairpin, dm6_seq_gapped, trans_seqs_trans):
     (start, stop) = gp.get_gapped_i(dm6_seq_gapped, hairpin['pos']-1, len(hairpin['fold']))
     dm6_hairp_gap = dm6_seq_gapped[start:stop]
     dm6_hairp = dm6_hairp_gap.replace('-','')
-    aPrimes = is_hairpin_valid(hairpin['fold'], dm6_hairp)
-    if aPrimes:
-        ortho_data = {}
-        for dro in trans_seqs_trans:
+    check = check_hairpin(hairpin['fold'], dm6_hairp)
+    if check[0] and check[1] and len(check[2]) > 0:
+        consv, ortho_data = [], ''
+        for dro in sorted(trans_seqs_trans.keys()):
+            if dro == 'dm6':
+                continue
             dro_seq = trans_seqs_trans[dro]
-            ortho_data[dro] = get_ortho_data(dro_seq[start:stop], hairpin['fold'], dm6_hairp_gap)
-        return [dm6_hairp, perc_matches(hairpin['fold']), ortho_data]
-    return
+            ortho_data += get_ortho_data(dro_seq[start:stop], hairpin['fold'], dm6_hairp_gap) + '\t'
+            consv.append(consv_score(dm6_hairp_gap, dro_seq[start:stop]))
+        cScore = sum(consv) / len(consv)
+        return '\t'.join(str (x) for x in [dm6_hairp, len(check[2]), cScore, ortho_data])

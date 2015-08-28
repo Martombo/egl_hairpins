@@ -28,11 +28,9 @@ with open('hairpins', 'w') as fout:
         dm6_seq = dm6_seq_gapped.replace('-', '')
         hairpins = lfolder.compute(dm6_seq)
         for hairpin in hairpins:
-            hairp_data = fk.analyze_hairpin(hairpin, dm6_seq_gapped, trans_seqs[trans])
-            loc = fk.determine_location(hairpin, trans_rel_stst[trans])
-
-            # check location!!!
-
-            if hairp_data:
-                fout.write('\t'.join([str(x) for x in [trans, hairpin['fold'], loc, len(hairpin['fold']), hairpin['energy']] + hairp_data]))
-                fout.write('\n')
+            consv_data = fk.analyze_hairpin(hairpin, dm6_seq_gapped, trans_seqs[trans])
+            if consv_data:
+                loc = fk.determine_location(hairpin, trans_rel_stst[trans])
+                output = [trans, hairpin['fold'], loc, len(hairpin['fold']), hairpin['pos'], hairpin['energy'],
+                          fk.perc_matches(hairpin['fold']), consv_data, '\n']
+                fout.write('\t'.join([str(x) for x in output]))
